@@ -1,0 +1,7 @@
+SYNTHETIC DEMONSTRATION DOCUMENT — NOT FOR REAL EQUIPMENT OPERATION
+Fictional Aster Pump AP-100 training manual.
+Page 1: Overview. The AP-100 is a fictional training pump, not a real device.
+Page 2: Training inspection schedule. In this fictional exercise, inspection is scheduled every 40 simulated operating hours.
+Page 3: Troubleshooting. In this fictional exercise, an amber indicator represents a simulated filter warning. No real-world procedure is implied.
+Test question: How often is the fictional AP-100 inspected? Expected: page 2, 40 simulated operating hours.
+Convert this text into a PDF before uploading for the demo.
