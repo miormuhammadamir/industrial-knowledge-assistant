@@ -4,3 +4,5 @@ __pycache__/
 .pytest_cache/
 data/
 *.pyc
+.vscode/
+apply_v12.py

@@ -35,3 +35,9 @@ Browser -> Flask Blueprints -> SQLite metadata / upload storage / background ind
 
 ## Limitations and security
 This is a functional starter implementation, not full specification compliance. Chunking is **word-based**, not token-aware. Citations are mapped only when the model emits `[SOURCE N]`; no independent claim-level verification exists. Background worker uses an in-process daemon and has no transactional cross-store recovery. Deleting documents may leave historical citation references. No OCR, multi-user login, CSRF protection for publicly exposed instances, advanced rate limiting, streaming, or robust job cancellation. Do not expose this app on a public network. Some processing failures can leave partial vector writes; reindex to recover. LLM responses must never be used as authoritative safety instructions. Local Ollama and Chroma integration remain to be verified on your computer.
+
+## v1.1 RAG reliability update
+
+The RAG service now retrieves up to eight candidates, applies a modest heuristic penalty to explicit evaluation/answer-key passages, and sends the top three to Ollama. The API response includes `retrieval_diagnostics` (chunk ID, page, cosine distance, and answer-key detection). Distances are not confidence scores. The system removes invalid citation IDs and suppresses source attribution for insufficient-evidence responses. This does **not** verify semantic entailment or guarantee correct answers. Evaluate with real manuals before any safety-critical use.
+
+Run `python -m pytest -v` in the project's Python 3.11 virtual environment. The original test suite and five new RAG tests should run without Ollama. Integration testing with Ollama and ChromaDB remains necessary.

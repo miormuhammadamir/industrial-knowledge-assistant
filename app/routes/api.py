@@ -98,3 +98,11 @@ def health():
         collection().count();vector='online'
     except Exception:vector='unavailable'
     return jsonify(application='online',ollama=ollama,vector_database=vector)
+
+@api.get('/documents/<doc_id>/jobs')
+def document_jobs(doc_id):
+    doc=db.session.get(Document,doc_id)
+    if not doc:return error('Document not found',404)
+    jobs=IndexingJob.query.filter_by(document_id=doc_id).order_by(IndexingJob.started_at.desc()).limit(10).all()
+    return jsonify(jobs=[{'id':j.id,'status':j.status,'progress':j.progress,
+                          'error':('Indexing failed. Check server logs.' if j.error_message else None)} for j in jobs])
