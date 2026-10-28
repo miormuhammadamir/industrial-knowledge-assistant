@@ -63,7 +63,23 @@ def job(job_id):
     if not j:return error('Job not found',404)
     return jsonify(id=j.id,document_id=j.document_id,status=j.status,progress=j.progress,error=j.error_message)
 @api.route('/conversations',methods=['GET'])
-def conversations():return jsonify(conversations=[{'id':c.id,'title':c.title,'updated_at':c.updated_at.isoformat()} for c in Conversation.query.order_by(Conversation.updated_at.desc()).limit(100)])
+def conversations():
+    q=Conversation.query
+    term=request.args.get('search','').strip()[:100]
+    if term:q=q.filter(Conversation.title.ilike('%'+term+'%'))
+    return jsonify(conversations=[{'id':c.id,'title':c.title,'updated_at':c.updated_at.isoformat()} for c in q.order_by(Conversation.updated_at.desc()).limit(100)])
+
+@api.patch('/conversations/<cid>')
+def rename_conversation(cid):
+    c=db.session.get(Conversation,cid)
+    if not c:return error('Conversation not found',404)
+    body=request.get_json(silent=True)
+    title=body.get('title') if isinstance(body,dict) else None
+    if not isinstance(title,str) or not 1<=len(title.strip())<=180:return error('Title must contain 1-180 characters')
+    c.title=title.strip()
+    c.updated_at=__import__('datetime').datetime.now(__import__('datetime').timezone.utc)
+    db.session.commit()
+    return jsonify(id=c.id,title=c.title,updated_at=c.updated_at.isoformat())
 @api.route('/conversations/<cid>',methods=['GET','DELETE'])
 def conversation(cid):
     c=db.session.get(Conversation,cid)
