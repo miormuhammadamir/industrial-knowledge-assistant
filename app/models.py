@@ -42,3 +42,22 @@ class IndexingJob(db.Model):
     started_at=db.Column(db.DateTime(timezone=True))
     completed_at=db.Column(db.DateTime(timezone=True))
     error_message=db.Column(db.Text)
+
+
+class User(db.Model):
+    id=db.Column(db.Integer,primary_key=True)
+    username=db.Column(db.String(40),unique=True,nullable=False,index=True)
+    display_name=db.Column(db.String(120),nullable=False)
+    password_hash=db.Column(db.String(255),nullable=False)
+    role=db.Column(db.String(12),nullable=False,default='viewer')
+    is_active=db.Column(db.Boolean,nullable=False,default=True)
+    created_at=db.Column(db.DateTime(timezone=True),default=now,nullable=False)
+
+class AuditEvent(db.Model):
+    id=db.Column(db.Integer,primary_key=True)
+    actor_id=db.Column(db.Integer,db.ForeignKey('user.id'),nullable=True)
+    action=db.Column(db.String(80),nullable=False)
+    entity_type=db.Column(db.String(40),nullable=False)
+    entity_id=db.Column(db.String(80))
+    details=db.Column(db.String(500))
+    created_at=db.Column(db.DateTime(timezone=True),default=now,nullable=False)

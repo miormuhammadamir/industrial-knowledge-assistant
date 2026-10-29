@@ -18,6 +18,26 @@ def create_app(test_config=None):
     from .routes.api import api
     from .routes.pages import pages
     app.register_blueprint(api,url_prefix='/api');app.register_blueprint(pages)
+    from .routes.auth import auth
+    from .security import csrf_guard
+    app.register_blueprint(auth,url_prefix='/api')
+    @app.before_request
+    def protect_api():
+        from flask import request, jsonify
+        from .security import current_user
+        if not request.path.startswith('/api/'):
+            return None
+        if request.method not in ('GET','HEAD','OPTIONS'):
+            rejection=csrf_guard()
+            if rejection:return rejection
+        if request.path in ('/api/auth/session','/api/auth/login'):
+            return None
+        if current_user() is None:
+            return jsonify(error={'code':'unauthorized','message':'Please sign in.'}),401
+        return None
+    app.config.update(SESSION_COOKIE_HTTPONLY=True,SESSION_COOKIE_SAMESITE='Lax',
+        SESSION_COOKIE_SECURE=os.getenv('IKA_HTTPS','0')=='1')
+
     app.extensions['indexer']=Indexer(app)
     if not app.config['TESTING']: app.extensions['indexer'].start()
     @app.errorhandler(413)
