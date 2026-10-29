@@ -9,6 +9,9 @@ from ..services.rag_service import answer
 from ..services.ollama_service import request_api
 from ..services.vector_service import remove_document
 api=Blueprint('api',__name__)
+from ..security import require_role, current_user
+from .auth import audit
+
 def error(message,code=400):return jsonify(error={'code':'request_error','message':message}),code
 def doc_json(d):return dict(id=d.id,filename=d.original_filename,status=d.status,pages=d.page_count,chunks=d.chunk_count,error=d.error_message,created_at=d.created_at.isoformat())
 @api.get('/dashboard/stats')
@@ -17,6 +20,7 @@ def stats():
     return jsonify(documents=Document.query.count(),statuses=counts,chunks=db.session.query(func.sum(Document.chunk_count)).scalar() or 0,conversations=Conversation.query.count(),questions=Message.query.filter_by(role='user').count())
 @api.route('/documents',methods=['GET','POST'])
 def documents():
+    if request.method=='POST' and current_user().role=='viewer':return error('Editor role required',403)
     if request.method=='GET':
         query=Document.query.order_by(Document.created_at.desc())
         if request.args.get('status'):query=query.filter_by(status=request.args['status'])
@@ -34,11 +38,12 @@ def documents():
     try:validate_pdf(path)
     except Exception as exc:path.unlink(missing_ok=True);return error(str(exc))
     doc=Document(id=doc_id,original_filename=Path(file.filename.replace('\\','/')).name[:255],stored_filename=stored,file_hash=digest,file_size=len(data))
-    db.session.add(doc);db.session.commit()
+    db.session.add(doc);audit('document.upload','document',doc.id,doc.original_filename);db.session.commit()
     job=current_app.extensions['indexer'].enqueue(doc.id)
     return jsonify(document=doc_json(doc),job_id=job.id),202
 @api.route('/documents/<doc_id>',methods=['GET','DELETE'])
 def document(doc_id):
+    if request.method=='DELETE' and current_user().role=='viewer':return error('Editor role required',403)
     doc=db.session.get(Document,doc_id)
     if not doc:return error('Document not found',404)
     if request.method=='GET':return jsonify(document=doc_json(doc))
@@ -47,14 +52,15 @@ def document(doc_id):
     except Exception:return error('Vector database unavailable; deletion cancelled',503)
     (Path(current_app.config['DATA_DIR'])/'uploads'/doc.stored_filename).unlink(missing_ok=True)
     IndexingJob.query.filter_by(document_id=doc.id).delete()
-    db.session.delete(doc);db.session.commit()
+    audit('document.delete','document',doc.id,doc.original_filename);db.session.delete(doc);db.session.commit()
     return '',204
 @api.post('/documents/<doc_id>/reindex')
+@require_role('editor')
 def reindex(doc_id):
     doc=db.session.get(Document,doc_id)
     if not doc:return error('Document not found',404)
     if doc.status in ('processing','pending'):return error('Already processing',409)
-    doc.status='pending';db.session.commit()
+    doc.status='pending';audit('document.reindex','document',doc.id);db.session.commit()
     job=current_app.extensions['indexer'].enqueue(doc.id)
     return jsonify(job_id=job.id),202
 @api.get('/indexing/jobs/<job_id>')
