@@ -32,7 +32,7 @@ def test_abstention_has_no_sources():
 
 def test_answer_with_mocked_retrieval(monkeypatch):
     monkeypatch.setattr(rag, 'embed', lambda questions: [[0.1, 0.2]])
-    monkeypatch.setattr(rag, 'search', lambda vector, ids, n: [match(1, 'Motor rating: 7.5 kW')])
+    monkeypatch.setattr(rag, 'search', lambda vector, ids, n, query=None: [match(1, 'Motor rating: 7.5 kW')])
     monkeypatch.setattr(rag, 'generate', lambda prompt: 'The motor rating is 7.5 kW [SOURCE 1].')
     result = rag.answer('What is the motor rating?')
     assert result['sources'][0]['page'] == 1

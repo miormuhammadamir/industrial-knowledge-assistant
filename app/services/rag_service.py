@@ -20,13 +20,31 @@ SOURCE_HEADER_RE = re.compile(r'^\s*(?:\[SOURCE\s+\d+\]\s*)?(?:IKA-DEMO-\d+\s*\|
 BARE_SOURCE_RE = re.compile(r'^\s*(?:SOURCE\s+(?:N|\d+)\.?|\[SOURCE\s+N\])\s*$', re.I)
 
 
+def _safe_distance(value, default=1.0):
+    try:
+        return float(value)
+    except (TypeError, ValueError):
+        return float(default)
+
+
 def rank_matches(matches):
     """Stable distance-based ranking, with a penalty for explicit answer keys."""
-    def key(match):
-        distance = float(match.get('distance', 1.0))
-        penalty = 0.35 if ANSWER_KEY.search(match.get('text', '')) else 0.0
-        return (distance + penalty, distance, str(match.get('id', '')))
-    return sorted(matches, key=key)
+    ranked = []
+    for match in matches or []:
+        if not isinstance(match, dict):
+            continue
+        text = str(match.get('text', ''))
+        distance = _safe_distance(match.get('distance', 1.0), 1.0)
+        penalty = 0.35 if ANSWER_KEY.search(text) else 0.0
+        if isinstance(match.get('hybrid_score'), (int, float)):
+            score = float(match['hybrid_score'])
+            if penalty:
+                score *= 0.5
+            sort_key = (0, -score, distance, str(match.get('id', '')))
+        else:
+            sort_key = (1, distance + penalty, distance, str(match.get('id', '')))
+        ranked.append((sort_key, match))
+    return [match for _, match in sorted(ranked, key=lambda item: item[0])]
 
 
 def cited_indices(response, count):
@@ -60,11 +78,12 @@ def normalize_response(response, matches):
     response = (response or '').strip()
     if ABSTAIN_RE.match(response):
         return INSUFFICIENT, []
-    indices = cited_indices(response, len(matches))
+    indices = cited_indices(response, len(matches or []))
     if not indices:
         return INSUFFICIENT, []
     # Reject fabricated citation numbers rather than silently claiming support.
-    if any(int(n) > len(matches) or int(n) < 1 for n in SOURCE_RE.findall(response)):
+    invalid = [int(n) for n in SOURCE_RE.findall(response) if int(n) > len(matches or []) or int(n) < 1]
+    if invalid:
         return INSUFFICIENT, []
     cleaned = _clean_answer(response)
     cleaned = SOURCE_RE.sub(lambda m: f'[SOURCE {int(m.group(1))}]', cleaned)
@@ -73,27 +92,33 @@ def normalize_response(response, matches):
     if not substantive:
         return INSUFFICIENT, []
     # Recalculate references after removing echoed headers.
-    indices = cited_indices(cleaned, len(matches))
+    indices = cited_indices(cleaned, len(matches or []))
     if not indices:
         return INSUFFICIENT, []
     sources = []
     for index in indices:
-        match = matches[index - 1]
-        meta = match['metadata']
+        match = (matches or [])[index - 1]
+        meta = match.get('metadata') or {}
+        text = str(match.get('text', ''))
         sources.append({
-            'document_id': meta['document_id'], 'title': meta['title'],
-            'page': meta['page'], 'chunk_id': match['id'],
-            'excerpt': match['text'][:450], 'distance': match.get('distance'),
+            'source_number': index,
+            'document_id': meta.get('document_id'), 'title': meta.get('title'),
+            'page': meta.get('page'), 'chunk_id': match.get('id'),
+            'excerpt': text[:450], 'distance': match.get('distance'),
         })
     return cleaned, sources
 
 
 def answer(question, document_ids=None):
-    matches = rank_matches(search(embed([question])[0], document_ids, n=8))[:3]
+    if not question or not str(question).strip():
+        return {'answer': INSUFFICIENT, 'sources': [], 'retrieved_count': 0, 'retrieval_diagnostics': []}
+    matches = rank_matches(search(
+        embed([question])[0], document_ids, n=8, query=question
+    ))[:3]
     if not matches:
         return {'answer': INSUFFICIENT, 'sources': [], 'retrieved_count': 0, 'retrieval_diagnostics': []}
     context = '\n\n'.join(
-        f"[SOURCE {i}] {m['metadata']['title']} page {m['metadata']['page']}: {m['text'][:1500]}"
+        f"[SOURCE {i}] {m.get('metadata', {}).get('title', 'unknown')} page {m.get('metadata', {}).get('page', 'unknown')}: {str(m.get('text', ''))[:1500]}"
         for i, m in enumerate(matches, 1)
     )
     prompt = (
@@ -111,9 +136,11 @@ def answer(question, document_ids=None):
     raw = generate(prompt)
     response, sources = normalize_response(raw, matches)
     diagnostics = [{
-        'chunk_id': m['id'], 'page': m['metadata']['page'],
-        'title': m['metadata']['title'], 'distance': m.get('distance'),
-        'answer_key_detected': bool(ANSWER_KEY.search(m['text'])),
+        'chunk_id': m.get('id'), 'page': (m.get('metadata') or {}).get('page'),
+        'title': (m.get('metadata') or {}).get('title'), 'distance': m.get('distance'),
+        'hybrid_score': m.get('hybrid_score'),
+        'retrieval_methods': m.get('retrieval_methods', [m.get('retrieval_method', 'semantic')]),
+        'answer_key_detected': bool(ANSWER_KEY.search(str(m.get('text', '')))),
     } for m in matches]
     return {
         'answer': response, 'sources': sources,

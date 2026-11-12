@@ -6,3 +6,10 @@ data/
 *.pyc
 .vscode/
 apply_v12.py
+# Local application backups
+/data_backup_pre_v14/
+/ika_pre_professional_backup/
+
+# Future local backup directories
+/*_backup/
+/*_backup_*/
