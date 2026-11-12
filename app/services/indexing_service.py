@@ -4,7 +4,7 @@ from pathlib import Path
 from .pdf_service import extract_pages
 from .chunking_service import chunks
 from .ollama_service import embed
-from .vector_service import store,remove_document
+from .vector_service import store
 from ..extensions import db
 from ..models import Document,IndexingJob
 class Indexer:
@@ -34,6 +34,7 @@ class Indexer:
         if not job:return
         doc=db.session.get(Document,job.document_id)
         if not doc:return
+        document_id = doc.id
         try:
             job.status='processing';job.started_at=datetime.now(timezone.utc);doc.status='processing';db.session.commit()
             pages=extract_pages(Path(self.app.config['DATA_DIR'])/'uploads'/doc.stored_filename)
@@ -41,10 +42,22 @@ class Indexer:
             if not items:raise ValueError('No text chunks available')
             vectors=[]
             for start in range(0,len(items),4):
-                vectors.extend(embed([x['text'] for x in items[start:start+4]]))
+                batch = items[start:start+4]
+                embeddings = embed([x['text'] for x in batch])
+                if len(embeddings) != len(batch):
+                    raise ValueError('Embedding service returned an unexpected number of vectors')
+                vectors.extend(embeddings)
                 job.progress=min(90,int((start+4)*90/len(items)));db.session.commit()
-            remove_document(doc.id);store(doc,items,vectors)
+            store(doc,items,vectors)
             doc.page_count=len(pages);doc.chunk_count=len(items);doc.status='indexed';doc.error_message=None;job.status='completed';job.progress=100
         except Exception as exc:
-            doc.status='failed';doc.error_message=str(exc)[:400];job.status='failed';job.error_message=doc.error_message
+            self.app.logger.exception('Document indexing failed for %s', document_id)
+            db.session.rollback()
+            job=db.session.get(IndexingJob,job_id)
+            doc=db.session.get(Document,document_id)
+            if not job or not doc:
+                return
+            doc.status='indexed' if doc.chunk_count else 'failed'
+            doc.error_message=str(exc)[:400]
+            job.status='failed';job.error_message=doc.error_message
         job.completed_at=datetime.now(timezone.utc);db.session.commit()

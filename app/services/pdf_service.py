@@ -3,7 +3,7 @@ import fitz
 def extract_pages(path):
     with fitz.open(path) as pdf:
         if pdf.needs_pass: raise ValueError('Password-protected PDFs are not supported')
-        result=[(i+1,' '.join(page.get_text().split())) for i,page in enumerate(pdf)]
+        result=[(i+1,'\n'.join(' '.join(line.split()) for line in page.get_text('text',sort=True).splitlines() if line.strip())) for i,page in enumerate(pdf)]
         if not any(text for _,text in result): raise ValueError('No extractable text. OCR is not supported in v1')
         return result
 

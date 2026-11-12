@@ -10,7 +10,9 @@ py -3.11 -m venv .venv
 .\.venv\Scripts\Activate.ps1
 python -m pip install -r requirements.txt
 Copy-Item .env.example .env
+flask --app run.py create-admin
 ```
+The one-time command prompts for the initial administrator username, display name, and password. Password input is hidden, and the command refuses to run once an administrator exists. Set `SECRET_KEY` in `.env` for a chosen secret; otherwise IKA creates and persists a random key in the ignored `data` directory. Change the initial admin password from **Account & Admin → My profile** after sign-in.
 3. In a terminal with Ollama running:
 ```powershell
 ollama pull llama3.2:3b
@@ -22,7 +24,7 @@ ollama pull nomic-embed-text
 6. Test offline components with `python -m pytest -q`.
 
 ## Architecture
-Browser -> Flask Blueprints -> SQLite metadata / upload storage / background index worker -> PyMuPDF -> word-based overlapping chunks -> Ollama embeddings -> persistent ChromaDB. Chat -> Ollama embedding -> Chroma search -> bounded prompt -> Ollama generation -> citation records -> SQLite conversation.
+Browser -> Flask Blueprints -> SQLite metadata / upload storage / background index worker -> PyMuPDF -> page- and heading-aware token chunks -> Ollama embeddings -> persistent ChromaDB and SQLite FTS5. Chat -> Ollama embedding plus keyword retrieval -> reciprocal-rank fusion -> bounded prompt -> Ollama generation -> citation records -> SQLite conversation.
 
 ## API
 - `GET /api/dashboard/stats` counts
@@ -34,10 +36,10 @@ Browser -> Flask Blueprints -> SQLite metadata / upload storage / background ind
 - `GET /api/models`, `GET /api/system/health`
 
 ## Limitations and security
-This is a functional starter implementation, not full specification compliance. Chunking is **word-based**, not token-aware. Citations are mapped only when the model emits `[SOURCE N]`; no independent claim-level verification exists. Background worker uses an in-process daemon and has no transactional cross-store recovery. Deleting documents may leave historical citation references. No OCR, multi-user login, CSRF protection for publicly exposed instances, advanced rate limiting, streaming, or robust job cancellation. Do not expose this app on a public network. Some processing failures can leave partial vector writes; reindex to recover. LLM responses must never be used as authoritative safety instructions. Local Ollama and Chroma integration remain to be verified on your computer.
+This is a functional starter implementation, not full specification compliance. Chunk budgets use the `cl100k_base` tokenizer as a practical estimate; it is not the exact tokenizer for every Ollama embedding model. Citations are mapped to retrieved passages only when the model emits `[SOURCE N]`; this does not independently verify claim-level entailment. Hybrid scores and vector distances are ranking diagnostics, not confidence scores. The background worker uses an in-process daemon and has no transactional cross-store recovery. Deleting documents may leave historical citation references. The app includes local user accounts, roles, and session-bound CSRF checks, but lacks OCR, advanced rate limiting, streaming, robust job cancellation, and production hardening. Do not expose this app on a public network. LLM responses must never be used as authoritative safety instructions.
 
-## v1.1 RAG reliability update
+## RAG evaluation and retrieval
 
-The RAG service now retrieves up to eight candidates, applies a modest heuristic penalty to explicit evaluation/answer-key passages, and sends the top three to Ollama. The API response includes `retrieval_diagnostics` (chunk ID, page, cosine distance, and answer-key detection). Distances are not confidence scores. The system removes invalid citation IDs and suppresses source attribution for insufficient-evidence responses. This does **not** verify semantic entailment or guarantee correct answers. Evaluate with real manuals before any safety-critical use.
+Retrieval merges Chroma semantic results and SQLite FTS5 keyword results using reciprocal-rank fusion, then sends up to three passages to Ollama. The API response includes `retrieval_diagnostics` (chunk ID, page, distance, hybrid score, retrieval method, and answer-key detection). Citation identity is checked; factual entailment is not. `tests/test_rag_evaluation.py` contains offline golden cases for page citations and unsupported questions. Run all offline checks with `python -m pytest -q`. Evaluate against approved real documents before relying on answers, and never use this system as an authority for safety-critical work.
 
-Run `python -m pytest -v` in the project's Python 3.11 virtual environment. The original test suite and five new RAG tests should run without Ollama. Integration testing with Ollama and ChromaDB remains necessary.
+After changing chunking, reindex existing PDFs so their stored vectors reflect the new chunk boundaries.

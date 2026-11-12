@@ -48,3 +48,12 @@ def test_does_not_abstain_on_normal_sentence_containing_not_specified():
     )
     assert answer.startswith('Warranty is not specified')
     assert len(sources) == 1
+
+
+def test_rank_matches_handles_missing_distance_values():
+    primary = sample(1)
+    primary['distance'] = '0.20'
+    fallback = sample(2)
+    fallback['distance'] = None
+    ranked = rank_matches([fallback, primary])
+    assert [item['id'] for item in ranked] == [primary['id'], fallback['id']]

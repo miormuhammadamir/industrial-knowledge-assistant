@@ -13,7 +13,7 @@ from ..security import require_role, current_user
 from .auth import audit
 
 def error(message,code=400):return jsonify(error={'code':'request_error','message':message}),code
-def doc_json(d):return dict(id=d.id,filename=d.original_filename,status=d.status,pages=d.page_count,chunks=d.chunk_count,error=d.error_message,created_at=d.created_at.isoformat())
+def doc_json(d):return dict(id=d.id,filename=d.original_filename,status=d.status,pages=d.page_count,chunks=d.chunk_count,error=('Last indexing attempt failed. See server logs.' if d.error_message else None),created_at=d.created_at.isoformat())
 @api.get('/dashboard/stats')
 def stats():
     counts={s:Document.query.filter_by(status=s).count() for s in ['pending','processing','indexed','failed']}
@@ -67,7 +67,7 @@ def reindex(doc_id):
 def job(job_id):
     j=db.session.get(IndexingJob,job_id)
     if not j:return error('Job not found',404)
-    return jsonify(id=j.id,document_id=j.document_id,status=j.status,progress=j.progress,error=j.error_message)
+    return jsonify(id=j.id,document_id=j.document_id,status=j.status,progress=j.progress,error=('Indexing failed. Check server logs.' if j.error_message else None))
 @api.route('/conversations',methods=['GET'])
 def conversations():
     q=Conversation.query
